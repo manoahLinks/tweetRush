@@ -36,8 +36,8 @@ importers:
         specifier: ^7.2.0
         version: 7.2.0
       '@stacks/network':
-        specifier: ^6.8.1
-        version: 6.8.1
+        specifier: ^7.2.0
+        version: 7.2.0
       '@stacks/transactions':
         specifier: ^7.2.0
         version: 7.2.0
@@ -1511,9 +1511,6 @@ packages:
 
   '@stacks/network@6.17.0':
     resolution: {integrity: sha512-numHbfKjwco/rbkGPOEz8+FcJ2nBnS/tdJ8R422Q70h3SiA9eqk9RjSzB8p4JP8yW1SZvW+eihADHfMpBuZyfw==}
-
-  '@stacks/network@6.8.1':
-    resolution: {integrity: sha512-n8M25pPbLqpSBctabtsLOTBlmPvm9EPQpTI//x7HLdt5lEjDXxauEQt0XGSvDUZwecrmztqt9xNxlciiGApRBw==}
 
   '@stacks/network@7.2.0':
     resolution: {integrity: sha512-AkLougCF2RLbK97TtISZxAhF3cE757XMXWOGKvEFWNauiQ5/bYyI9W5jZypG3yI/AyYIo04NKoFWWTnpJcn1iA==}
@@ -7739,13 +7736,6 @@ snapshots:
       varuint-bitcoin: 1.1.2
 
   '@stacks/network@6.17.0':
-    dependencies:
-      '@stacks/common': 6.16.0
-      cross-fetch: 3.2.0
-    transitivePeerDependencies:
-      - encoding
-
-  '@stacks/network@6.8.1':
     dependencies:
       '@stacks/common': 6.16.0
       cross-fetch: 3.2.0
