@@ -1,0 +1,299 @@
+/**
+ * OnboardingScreen.tsx
+ *
+ * Onboarding flow with wallet connection and username registration
+ */
+
+import { stacksConfig } from "@/config/stacks";
+import { useWallet } from "@/contexts/WalletContext";
+import { walletService } from "@/utils/wallet";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useState } from "react";
+import {
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
+
+interface OnboardingScreenProps {
+  onComplete: (username: string, walletAddress: string) => void;
+}
+
+const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
+  const [step, setStep] = useState<"wallet" | "username">("wallet");
+  const [username, setUsername] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+
+  // setup onbording
+  const [isCreatingAccount, setIsCreatingAccount] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
+  const [mnemonic, setMnemonic] = useState<string>("");
+
+  const { createNewWallet, loginWithMnemonic, address } = useWallet();
+
+  const handleCreateAccount = () => {
+    setIsCreatingAccount(true);
+  };
+
+  const handleWalletNext = async () => {
+
+    console.log(mnemonic)
+    setIsProcessing(true);
+    setLoadingMessage(
+      isCreatingAccount
+        ? "Generating secure wallet..."
+        : "Restoring your wallet..."
+    );
+
+    try {
+      if (isCreatingAccount) {
+        // Generate new wallet
+        setLoadingMessage("Generating 24-word seed phrase...");
+        await new Promise((resolve) => setTimeout(resolve, 500)); // Brief delay for UX
+        await createNewWallet(mnemonic);
+        setLoadingMessage("Deriving wallet address...");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } else {
+        // Login with mnemonic
+        setLoadingMessage("Validating seed phrase...");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const success = await loginWithMnemonic(mnemonic);
+        if (!success) {
+          setIsProcessing(false);
+          setLoadingMessage("");
+          Alert.alert(
+            "Invalid Mnemonic",
+            "Please check your seed phrase and try again."
+          );
+          return;
+        }
+        setLoadingMessage("Restoring wallet data...");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      setLoadingMessage("Almost there...");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Move to username slide
+      //   flatListRef.current?.scrollToIndex({ index: slides.length + 2 });
+      //   setCurrentIndex(slides.length + 2);
+    } catch (error) {
+      Alert.alert("Error", "Failed to setup wallet. Please try again.");
+      console.error("Wallet setup error:", error);
+    } finally {
+      setIsProcessing(false);
+      setLoadingMessage("");
+    }
+  };
+
+
+
+  // onboarding ends here
+
+  const handleWalletConnect = async () => {
+    setIsConnecting(true);
+
+    try {
+      const walletInfo = await walletService.connectWallet();
+      setWalletAddress(walletInfo.address);
+      setIsConnecting(false);
+      setStep("username");
+    } catch (error) {
+      setIsConnecting(false);
+      Alert.alert(
+        "Connection Failed",
+        "Failed to connect wallet. Please try again."
+      );
+    }
+  };
+
+  const handleUsernameSubmit = async () => {
+    if (!username.trim()) {
+      Alert.alert("Error", "Please enter a username");
+      return;
+    }
+
+    if (username.length < 3) {
+      Alert.alert("Error", "Username must be at least 3 characters");
+      return;
+    }
+
+    setIsRegistering(true);
+
+    // Simulate username registration
+    setTimeout(() => {
+      setIsRegistering(false);
+      onComplete(username.trim(), walletAddress);
+    }, 1500);
+  };
+
+  const renderWalletStep = () => (
+    <View className="flex-1 justify-center items-center px-6">
+      <View className="bg-primary/10 p-6 rounded-full mb-8">
+        <Ionicons name="wallet" size={48} color="#16A349" />
+      </View>
+
+      <Text className="text-3xl font-bold text-white text-center mb-4">
+        Connect Your Wallet
+      </Text>
+
+      <Text className="text-gray-400 text-center mb-8 text-lg leading-6">
+        Connect your crypto wallet to start playing TweetRush and earn rewards
+      </Text>
+
+      {/* {!isCreatingAccount && ( */}
+        <View className="mb-lg">
+          <Text className="text-body text-text-primary font-semibold mb-sm">
+            Seed Phrase *
+          </Text>
+          <TextInput
+            className="bg-card rounded-md px-md py-lg text-text-primary text-white border border-white p-2"
+            placeholder="Enter your 12 or 24 word seed phrase..."
+            placeholderTextColor="#D4A5B8"
+            value={mnemonic}
+            onChangeText={setMnemonic}
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+            style={{ minHeight: 120 }}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          <Text className="text-caption text-text-secondary mt-xs">
+            Separate each word with a space
+          </Text>
+        </View>
+      {/* )} */}
+
+      <TouchableOpacity
+        onPress={handleWalletNext}
+        disabled={isConnecting}
+        className="bg-primary rounded-xl py-4 px-8 w-full flex-row items-center justify-center"
+      >
+        {isConnecting ? (
+          <ActivityIndicator color="white" size="small" />
+        ) : (
+          <>
+            <Ionicons name="wallet" size={20} color="white" className="mr-2" />
+            <Text className="text-white font-semibold text-lg ml-2">
+              Connect Wallet
+            </Text>
+          </>
+        )}
+      </TouchableOpacity>
+
+      <Text className="text-gray-500 text-sm text-center mt-6">
+        We'll use your wallet to track your progress and rewards
+      </Text>
+
+      <View className="bg-yellow-900/20 border border-yellow-600/30 rounded-xl p-4 mt-4">
+        <Text className="text-yellow-400 text-sm font-semibold mb-1">
+          🧪 Testnet Mode
+        </Text>
+        <Text className="text-yellow-300 text-xs">
+          Connected to Stacks Testnet. Get test STX from the faucet to start
+          playing!
+        </Text>
+      </View>
+    </View>
+  );
+
+  const renderUsernameStep = () => (
+    <View className="flex-1 justify-center items-center px-6">
+      <View className="bg-accent/10 p-6 rounded-full mb-8">
+        <Ionicons name="person" size={48} color="#F59E0B" />
+      </View>
+
+      <Text className="text-3xl font-bold text-white text-center mb-4">
+        Choose Your Username
+      </Text>
+
+      <Text className="text-gray-400 text-center mb-4 text-lg leading-6">
+        Pick a unique username that will be displayed on the leaderboard
+      </Text>
+
+      <View className="bg-gray-800 rounded-xl p-4 mb-6 w-full">
+        <Text className="text-gray-400 text-sm mb-1">
+          Connected Stacks Wallet
+        </Text>
+        <Text className="text-primary font-mono text-sm">
+          {walletAddress.slice(0, 8)}...{walletAddress.slice(-6)}
+        </Text>
+        <Text className="text-gray-500 text-xs mt-1">
+          {stacksConfig.networkType === "mainnet" ? "Mainnet" : "Testnet"}
+        </Text>
+      </View>
+
+      <View className="w-full mb-6">
+        <TextInput
+          value={username}
+          onChangeText={setUsername}
+          placeholder="Enter your username"
+          placeholderTextColor="#6B7280"
+          className="bg-gray-800 text-white text-lg px-4 py-4 rounded-xl border border-gray-700 focus:border-primary"
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={20}
+        />
+        <Text className="text-gray-500 text-sm mt-2">
+          {username.length}/20 characters
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        onPress={handleUsernameSubmit}
+        disabled={isRegistering || !username.trim()}
+        className={`rounded-xl py-4 px-8 w-full flex-row items-center justify-center ${
+          isRegistering || !username.trim() ? "bg-gray-600" : "bg-accent"
+        }`}
+      >
+        {isRegistering ? (
+          <ActivityIndicator color="white" size="small" />
+        ) : (
+          <>
+            <Ionicons
+              name="checkmark"
+              size={20}
+              color="white"
+              className="mr-2"
+            />
+            <Text className="text-white font-semibold text-lg ml-2">
+              Complete Setup
+            </Text>
+          </>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => setStep("wallet")} className="mt-4">
+        <Text className="text-gray-400 text-sm">
+          ← Back to wallet connection
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-darkBg"
+    >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {step === "wallet" ? renderWalletStep() : renderUsernameStep()}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
+
+export default OnboardingScreen;
