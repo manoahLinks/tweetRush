@@ -1,18 +1,18 @@
 import {
-    bufferCV,
-    ClarityValue,
-    cvToValue,
-    fetchCallReadOnlyFunction,
-    listCV,
-    makeSTXTokenTransfer,
-    noneCV,
-    PostConditionMode,
-    principalCV,
-    someCV,
-    stringAsciiCV,
-    stringUtf8CV,
-    tupleCV,
-    uintCV,
+  bufferCV,
+  ClarityValue,
+  cvToValue,
+  fetchCallReadOnlyFunction,
+  listCV,
+  makeSTXTokenTransfer,
+  noneCV,
+  PostConditionMode,
+  principalCV,
+  someCV,
+  stringAsciiCV,
+  stringUtf8CV,
+  tupleCV,
+  uintCV,
 } from '@stacks/transactions';
 import { CONTRACT_CONFIG } from './contract-config';
   
@@ -120,4 +120,15 @@ export async function registerUser(username: string) {
  */
 export async function getUser(userAddress: string) {
     return await callReadOnly('get-user', [principalCV(userAddress)]);
+  }
+
+
+
+// ===========================================
+// ADMIN FUNCTIONS
+// ===========================================
+
+export async function addWord(word: string) {
+    const functionArgs = [stringUtf8CV(word)];
+    return prepareContractCall('add-word', functionArgs);
   }

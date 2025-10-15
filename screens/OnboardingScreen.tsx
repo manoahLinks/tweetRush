@@ -6,19 +6,19 @@
 
 import { stacksConfig } from "@/config/stacks";
 import { useWallet } from "@/contexts/WalletContext";
-import { walletService } from "@/utils/wallet";
+import { useContract } from "@/hooks/useContract";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 interface OnboardingScreenProps {
@@ -34,6 +34,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
   const [isCreatingAccount, setIsCreatingAccount] = useState(true);
 
   const { createNewWallet, loginWithMnemonic, address } = useWallet();
+  const {registerUserOnChain} = useContract();
 
   const handleCreateAccount = () => {
     setIsCreatingAccount(true);
@@ -122,6 +123,16 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
     setLoadingMessage("Creating your profile...");
 
     // Simulate username registration
+    try {
+         // Call the smart contract to register the user
+        const txId = await registerUserOnChain(username.trim());
+
+        alert(txId)
+        
+    } catch (error) {
+        console.log(error)
+        alert(error)
+    }
     setTimeout(() => {
       setIsProcessing(false);
       setLoadingMessage("");

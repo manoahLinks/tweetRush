@@ -1,15 +1,15 @@
+import { useWallet } from '@/contexts/WalletContext';
 import { useState } from 'react';
 import { Alert } from 'react-native';
-import { useWallet } from '@/contexts/WalletContext';
 // import { useAppStore } from '@/store/useAppStore';
-import {
-  broadcastTransaction,
-  makeContractCall,
-  AnchorMode,
-  PostConditionMode,
-} from '@stacks/transactions';
 import { CONTRACT_CONFIG } from '@/lib/contract-config';
 import * as ContractUtils from '@/lib/contract-utils';
+import {
+  AnchorMode,
+  broadcastTransaction,
+  makeContractCall,
+  PostConditionMode,
+} from '@stacks/transactions';
 
 /**
  * Custom hook for TweetRush contract interactions
@@ -172,4 +172,55 @@ export function useContract() {
       console.error('Read-only call failed:', error);
       return null;
     }
-  }}
+  }
+
+
+   // ===========================================
+  // WordRush CONTRACT FUNCTIONS
+  // ===========================================
+
+  /**
+   * Register user with username
+   * @param username - Username (max 50 characters)
+   */
+  async function registerUserOnChain(username: string) {
+    const txOptions = await ContractUtils.registerUser(username);
+
+    return await callContract(
+      txOptions.functionName,
+      txOptions.functionArgs,
+      (txId) => {
+        console.log('User registered on chain:', txId);
+      }
+    );
+  }
+
+  async function addWord(word: string) {
+    const txOptions = await ContractUtils.addWord(word);
+
+    return await callContract(
+      txOptions.functionName,
+      txOptions.functionArgs,
+      (txId) => {
+        console.log('Word added on chain:', txId);
+      }
+    );
+  }
+
+  return {
+    // Wallet state
+    isConnected,
+    address,
+    wallet,
+    isProcessing,
+
+    // Generic functions
+    callContract,
+    readContract,
+    sendSTX,
+
+    // User functions
+    registerUserOnChain,
+    addWord
+  };
+}
