@@ -43,7 +43,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         setMnemonic(storedMnemonic.trim());
 
         const walletAddress = getAddressFromPrivateKey(
-          restoredWallet.accounts[0].stxPrivateKey
+          restoredWallet.accounts[0].stxPrivateKey,
+          'testnet'
         );
         setAddress(walletAddress);
       }
@@ -71,7 +72,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Get address (using testnet)
       const walletAddress = getAddressFromPrivateKey(
-        newWallet.accounts[0].stxPrivateKey
+        newWallet.accounts[0].stxPrivateKey,
+        'testnet'
       );
       setAddress(walletAddress);
 
@@ -95,7 +97,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Get address
       const walletAddress = getAddressFromPrivateKey(
-        restoredWallet.accounts[0].stxPrivateKey
+        restoredWallet.accounts[0].stxPrivateKey,
+        'testnet'
       );
       setAddress(walletAddress);
 

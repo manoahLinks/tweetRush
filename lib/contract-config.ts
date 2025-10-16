@@ -1,4 +1,4 @@
-import { STACKS_TESTNET, STACKS_MAINNET } from '@stacks/network';
+import { STACKS_TESTNET } from '@stacks/network';
 
 /**
  * Contract Configuration
@@ -9,7 +9,7 @@ export const CONTRACT_CONFIG = {
   CONTRACT_ADDRESS: 'ST264AMXKZA5Y4YVMDPA3CDGFGT7Q885W8R15FK7G',
 
   // Contract name
-  CONTRACT_NAME: 'Word-Rush',
+  CONTRACT_NAME: 'wordleRush',
 
   // Network configuration (switch to STACKS_MAINNET for production)
   NETWORK: STACKS_TESTNET,

@@ -28,8 +28,8 @@ export const APP_CONFIG = {
 export const TESTNET_CONFIG = {
     coreApiUrl: 'https://stacks-node-api.testnet.stacks.co',
     networkId: 2147483648, // Testnet network ID
-    contractAddress: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM', // Your deployed contract address
-    contractName: 'tweetrush', // Your contract name
+    contractAddress: 'ST264AMXKZA5Y4YVMDPA3CDGFGT7Q885W8R15FK7G', // Your deployed contract address
+    contractName: 'wordleRush', // Your contract name
 };
 
 // Network configurations
