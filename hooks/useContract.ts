@@ -232,16 +232,20 @@ export function useContract() {
     /**
      * Submit a guess for the current game
      * @param guess - 5-letter word guess
+     * @returns Transaction ID and guess result
      */
-    async function makeGuess(guess: string) {
+    async function makeGuess(guess: string): Promise<{txId: string | null; result: any}> {
         const txOptions = ContractUtils.submitGuess(guess);
-        return await callContract(
+        const txId = await callContract(
             txOptions.functionName,
             txOptions.functionArgs,
             (txId) => {
                 console.log("Guess submitted:", txId);
             }
         );
+        
+        // Return both txId and a placeholder for result (will be fetched after confirmation)
+        return { txId, result: null };
     }
 
     /**

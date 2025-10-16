@@ -251,6 +251,15 @@ export async function getTotalWords() {
 }
 
 /**
+ * Get word at specific index
+ * @param index - Word index
+ * @returns Word or null
+ */
+export async function getWordAtIndex(index: number) {
+    return await callReadOnly("get-word-at-index", [uintCV(index)]);
+}
+
+/**
  * Get game counter
  * @returns Current game counter
  */

@@ -7,6 +7,8 @@
 
 import { useContract } from "@/hooks/useContract";
 import { invalidateCacheForAddress } from "@/lib/contract-utils";
+import { gameStorage } from "@/lib/game-storage";
+import * as ContractUtils from "@/lib/contract-utils";
 import { GameState, GameTile, TileState } from "@/mocks";
 import React, {
     createContext,
@@ -14,6 +16,7 @@ import React, {
     useContext,
     useEffect,
     useState,
+    useRef,
 } from "react";
 import { useWallet } from "./WalletContext";
 
@@ -59,22 +62,67 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         getActiveGameData,
         checkHasActiveGame,
         getBountyData,
+        evaluateGuessPreview,
     } = useContract();
 
     const [gameState, setGameState] = useState<GameState | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [lastGuessResult, setLastGuessResult] = useState<any>(null);
+    const currentGameIdRef = useRef<number | null>(null);
 
     const hasActiveGame =
         gameState !== null && gameState.gameStatus === "active";
     const canPlay = isConnected && !isLoading;
 
     /**
+     * Evaluate a guess and return tile states
+     * 2 = correct position (green)
+     * 1 = wrong position (yellow)
+     * 0 = not in word (gray)
+     */
+    const evaluateGuess = (guess: string, answer: string): number[] => {
+        const result: number[] = [];
+        const answerChars = answer.split('');
+        const guessChars = guess.split('');
+        const used: boolean[] = new Array(5).fill(false);
+
+        // First pass: mark correct positions (green)
+        for (let i = 0; i < 5; i++) {
+            if (guessChars[i] === answerChars[i]) {
+                result[i] = 2; // correct
+                used[i] = true;
+            }
+        }
+
+        // Second pass: mark wrong positions (yellow) and absent (gray)
+        for (let i = 0; i < 5; i++) {
+            if (result[i] === 2) continue; // already marked as correct
+
+            let found = false;
+            for (let j = 0; j < 5; j++) {
+                if (!used[j] && guessChars[i] === answerChars[j] && i !== j) {
+                    result[i] = 1; // present but wrong position
+                    used[j] = true;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                result[i] = 0; // not in word
+            }
+        }
+
+        return result;
+    };
+
+    /**
      * Convert blockchain game data to UI GameState
      */
     const convertToGameState = useCallback(
-        async (blockchainGame: any): Promise<GameState | null> => {
+        async (blockchainGame: any, lastGuessResult?: any): Promise<GameState | null> => {
             try {
                 if (!blockchainGame || !blockchainGame.value) {
                     return null;
@@ -84,26 +132,87 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
                 // Extract game data from Clarity response
                 const wordIndex = game["word-index"]?.value || 0;
+                const gameId = game["game-id"]?.value || 0;
                 const attempts = game.attempts?.value || 0;
                 const maxAttempts = 6;
                 const won = game.won?.value || false;
                 const guesses = game.guesses?.value || [];
+                
+                // Store current game ID
+                currentGameIdRef.current = gameId;
+                
+                // Determine game status
+                const isComplete = won || attempts >= maxAttempts;
+                const gameStatus = won ? "won" : (isComplete ? "lost" : "active");
 
-                // Create game grid
+                // Get target word if game is complete
+                let targetWord = "?????";
+                if (isComplete) {
+                    // Try to fetch the word from the blockchain
+                    try {
+                        const wordData = await ContractUtils.getWordAtIndex(wordIndex);
+                        if (wordData?.value) {
+                            targetWord = wordData.value || "?????";
+                            console.log(`[Game] Fetched answer from blockchain: ${targetWord}`);
+                        }
+                    } catch (e) {
+                        console.log("[Game] Could not fetch word, using placeholder");
+                    }
+                }
+
+                // Get stored evaluations for this game
+                const storedEvaluations = address 
+                    ? await gameStorage.getGameEvaluations(address, gameId)
+                    : [];
+
+                // Create game grid with proper tile states
                 const grid: GameTile[][] = [];
 
-                // Process submitted guesses
+                // Process each row
                 for (let i = 0; i < maxAttempts; i++) {
                     const row: GameTile[] = [];
 
                     if (i < guesses.length) {
                         // This row has a submitted guess
-                        const guess = guesses[i];
+                        const guessWord = guesses[i];
+                        
+                        // Get evaluation result for this guess
+                        let evaluation: number[] | null = null;
+                        
+                        // Try to get from stored evaluations first
+                        const storedEval = storedEvaluations.find(e => e.guess === guessWord);
+                        if (storedEval) {
+                            evaluation = storedEval.result;
+                            console.log(`[Game] Using stored evaluation for guess: ${guessWord}`);
+                        }
+                        // If we have the answer (game complete), evaluate locally
+                        else if (targetWord !== "?????") {
+                            evaluation = evaluateGuess(guessWord, targetWord);
+                            console.log(`[Game] Evaluating with known answer: ${guessWord} vs ${targetWord}`);
+                        }
+
+                        // Create tiles with proper states
                         for (let j = 0; j < 5; j++) {
-                            row.push({
-                                letter: guess[j] || null,
-                                state: "correct" as TileState, // Will be updated by evaluation
-                            });
+                            const letter = guessWord[j] || null;
+                            let state: TileState = "empty";
+                            
+                            if (letter) {
+                                if (evaluation) {
+                                    // We have evaluation - show colors
+                                    if (evaluation[j] === 2) {
+                                        state = "correct";
+                                    } else if (evaluation[j] === 1) {
+                                        state = "present";
+                                    } else {
+                                        state = "absent";
+                                    }
+                                } else {
+                                    // No evaluation yet - show as filled (active game)
+                                    state = "filled";
+                                }
+                            }
+
+                            row.push({ letter, state });
                         }
                     } else {
                         // Empty row
@@ -133,18 +242,19 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                     console.log("No bounty for this word");
                 }
 
+                // Clear stored evaluations if game is complete
+                if (isComplete && address) {
+                    await gameStorage.clearGameEvaluations(address, gameId);
+                }
+
                 return {
                     wordIndex,
-                    targetWord: "?????", // Hidden until game is complete
+                    targetWord,
                     attempts,
                     maxAttempts,
                     currentAttempt: attempts,
                     grid,
-                    gameStatus: won
-                        ? "won"
-                        : attempts >= maxAttempts
-                        ? "lost"
-                        : "active",
+                    gameStatus,
                     hasBounty,
                     bountyAmount,
                 };
@@ -153,7 +263,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                 return null;
             }
         },
-        [getBountyData]
+        [getBountyData, address]
     );
 
     /**
@@ -173,11 +283,12 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
             if (!hasGame?.value) {
                 setGameState(null);
+                setLastGuessResult(null);
                 return;
             }
 
             const activeGame = await getActiveGameData(address);
-            const convertedState = await convertToGameState(activeGame);
+            const convertedState = await convertToGameState(activeGame, lastGuessResult);
             setGameState(convertedState);
         } catch (err: any) {
             console.error("Error loading active game:", err);
@@ -199,7 +310,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
             setError(null);
 
             const activeGame = await getActiveGameData(address);
-            const convertedState = await convertToGameState(activeGame);
+            const convertedState = await convertToGameState(activeGame, lastGuessResult);
             setGameState(convertedState);
         } catch (err: any) {
             console.error("Error refreshing game state:", err);
@@ -274,34 +385,65 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                 setIsLoading(true);
                 setError(null);
 
-                const txId = await makeGuess(guess);
+                // First, optimistically update UI by evaluating the guess locally
+                // This gives immediate visual feedback
+                if (gameState) {
+                    const gameId = currentGameIdRef.current || 0;
+                    
+                    // Create updated grid with the new guess
+                    const newGrid = [...gameState.grid];
+                    const currentRow = gameState.currentAttempt;
+                    
+                    // Add the guess to the grid temporarily with filled state
+                    for (let j = 0; j < 5; j++) {
+                        newGrid[currentRow][j] = {
+                            letter: guess[j].toUpperCase(),
+                            state: "filled" as TileState,
+                        };
+                    }
+
+                    // Optimistic update
+                    setGameState({
+                        ...gameState,
+                        grid: newGrid,
+                    });
+                }
+
+                // Submit the guess transaction
+                const { txId } = await makeGuess(guess);
 
                 if (!txId) {
                     setError("Failed to submit guess");
+                    // Revert optimistic update
+                    await loadActiveGame();
                     return false;
                 }
+
+                console.log(`[Game] Guess submitted, waiting for confirmation...`);
 
                 // Invalidate cache for this address after transaction
                 if (address) {
                     invalidateCacheForAddress(address);
                 }
 
-                // Wait for transaction to be processed
-                await new Promise((resolve) => setTimeout(resolve, 3000));
+                // Wait for transaction to be processed and confirmed
+                await new Promise((resolve) => setTimeout(resolve, 4000));
 
-                // Reload game state
-                await refreshGameState();
+                // Reload game state from blockchain
+                await loadActiveGame();
 
                 return true;
             } catch (err: any) {
                 console.error("Error submitting guess:", err);
                 setError(err.message || "Failed to submit guess");
+                // Revert optimistic update
+                await loadActiveGame();
                 return false;
             } finally {
                 setIsLoading(false);
             }
         },
-        [canPlay, hasActiveGame, makeGuess, refreshGameState]
+        [canPlay, hasActiveGame, makeGuess, getActiveGameData, address, gameState, loadActiveGame]
     );
 
     /**
