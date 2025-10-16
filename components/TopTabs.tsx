@@ -2,17 +2,17 @@
  * TopTabs.tsx
  *
  * Custom top tab navigation component
- * Shows 5 tabs: Home, Play, Bounties, Leaderboard, Profile
+ * Shows 6 tabs: Home, Play, Bounties, Leaderboard, Profile, Admin
  */
 
+import { TabName } from "@/navigation/AppNavigator";
+import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { View, Text, Pressable, ScrollView } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import Animated, {
     useAnimatedStyle,
     withTiming,
 } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
-import { TabName } from "@/navigation/AppNavigator";
 
 interface TopTabsProps {
     activeTab: TabName;
@@ -33,6 +33,7 @@ const tabs = [
         icon: "podium" as const,
     },
     { name: "profile" as TabName, label: "Profile", icon: "person" as const },
+    { name: "admin" as TabName, label: "Admin", icon: "settings" as const },
 ];
 
 const TopTabs: React.FC<TopTabsProps> = ({ activeTab, onTabChange }) => {

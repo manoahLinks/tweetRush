@@ -1,21 +1,35 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, ScrollView, Alert } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import Tile from "@/components/game/Tile";
-import Keyboard from "@/components/game/Keyboard";
 import Header from "@/components/game/Header";
+import Keyboard from "@/components/game/Keyboard";
+import Tile from "@/components/game/Tile";
 import Modal from "@/components/ui/Modal";
-import { GameState, LetterState, mockMidGame } from "@/mocks";
+import { useGame } from "@/contexts/GameContext";
+import { useContract } from "@/hooks/useContract";
+import { LetterState } from "@/mocks";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useState } from "react";
+import {
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    ScrollView,
+    Text,
+    View,
+} from "react-native";
 
 interface GameScreenProps {
     onBack: () => void;
-    gameState?: GameState;
 }
 
-const GameScreen: React.FC<GameScreenProps> = ({
-    onBack,
-    gameState = mockMidGame,
-}) => {
+const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
+    const {
+        gameState,
+        isLoading,
+        submitGuess: submitGameGuess,
+        forfeitGame: forfeitGameAction,
+        refreshGameState,
+    } = useGame();
+    const { claimBountyReward, isProcessing } = useContract();
+
     const [currentInput, setCurrentInput] = useState("");
     const [letterStates, setLetterStates] = useState<
         Record<string, LetterState>
@@ -23,7 +37,34 @@ const GameScreen: React.FC<GameScreenProps> = ({
     const [showWinModal, setShowWinModal] = useState(false);
     const [showLoseModal, setShowLoseModal] = useState(false);
     const [showForfeitModal, setShowForfeitModal] = useState(false);
-    const [revealedRow, setRevealedRow] = useState<number | null>(null);
+    const [isClaimingBounty, setIsClaimingBounty] = useState(false);
+
+    // Check for game completion
+    useEffect(() => {
+        if (!gameState) return;
+
+        if (gameState.gameStatus === "won") {
+            setShowWinModal(true);
+        } else if (gameState.gameStatus === "lost") {
+            setShowLoseModal(true);
+        }
+    }, [gameState?.gameStatus]);
+
+    // If no game state, show loading or prompt
+    if (!gameState) {
+        return (
+            <View className="flex-1 bg-darkBg items-center justify-center">
+                <ActivityIndicator size="large" color="#16A349" />
+                <Text className="text-white text-lg mt-4">Loading game...</Text>
+                <Pressable
+                    onPress={onBack}
+                    className="mt-6 bg-gray-700 px-6 py-3 rounded-xl"
+                >
+                    <Text className="text-white font-bold">Go Back</Text>
+                </Pressable>
+            </View>
+        );
+    }
 
     // Calculate letter states from game grid
     useEffect(() => {
@@ -53,16 +94,23 @@ const GameScreen: React.FC<GameScreenProps> = ({
         setLetterStates(states);
     }, [gameState]);
 
-    const handleKeyPress = (key: string) => {
-        if (gameState.gameStatus !== "active") return;
+    const handleKeyPress = async (key: string) => {
+        if (gameState.gameStatus !== "active" || isLoading || isProcessing)
+            return;
 
         if (key === "⌫") {
             setCurrentInput((prev) => prev.slice(0, -1));
         } else if (key === "ENTER") {
             if (currentInput.length === 5) {
-                // Mock: In real app, validate word and submit
-                Alert.alert("Mock", `Would submit word: ${currentInput}`);
-                setCurrentInput("");
+                const success = await submitGameGuess(currentInput);
+                if (success) {
+                    setCurrentInput("");
+                } else {
+                    Alert.alert(
+                        "Error",
+                        "Failed to submit guess. Please try again."
+                    );
+                }
             } else {
                 Alert.alert("Invalid", "Word must be 5 letters");
             }
@@ -75,15 +123,36 @@ const GameScreen: React.FC<GameScreenProps> = ({
         setShowForfeitModal(true);
     };
 
-    const confirmForfeit = () => {
+    const confirmForfeit = async () => {
         setShowForfeitModal(false);
-        Alert.alert("Mock", "Game forfeited (not implemented)");
-        onBack();
+        const success = await forfeitGameAction();
+        if (success) {
+            Alert.alert("Game Forfeited", "Better luck next time!");
+            onBack();
+        } else {
+            Alert.alert("Error", "Failed to forfeit game");
+        }
     };
 
-    // Mock win/lose for demonstration
-    const mockWin = () => setShowWinModal(true);
-    const mockLose = () => setShowLoseModal(true);
+    const handleClaimBounty = async () => {
+        if (!gameState.hasBounty || isClaimingBounty) return;
+
+        try {
+            setIsClaimingBounty(true);
+            const txId = await claimBountyReward(gameState.wordIndex);
+
+            if (txId) {
+                Alert.alert("Success!", "Bounty claimed successfully!");
+                await refreshGameState();
+            } else {
+                Alert.alert("Error", "Failed to claim bounty");
+            }
+        } catch (error: any) {
+            Alert.alert("Error", error.message || "Failed to claim bounty");
+        } finally {
+            setIsClaimingBounty(false);
+        }
+    };
 
     const attemptsLeft = gameState.maxAttempts - gameState.attempts;
 
@@ -183,31 +252,50 @@ const GameScreen: React.FC<GameScreenProps> = ({
                     })}
                 </View>
 
-                {/* Mock Test Buttons (for demonstration) */}
+                {/* Game Stats */}
                 <View className="px-4 mb-4">
-                    <Text className="text-gray-500 text-xs mb-2 text-center">
-                        Mock Testing (remove in production)
-                    </Text>
-                    <View
-                        className="flex-row justify-center"
-                        style={{ gap: 8 }}
-                    >
-                        <Pressable
-                            onPress={mockWin}
-                            className="bg-primary px-4 py-2 rounded-lg"
-                        >
-                            <Text className="text-white text-xs font-bold">
-                                Test Win
-                            </Text>
-                        </Pressable>
-                        <Pressable
-                            onPress={mockLose}
-                            className="bg-red-600 px-4 py-2 rounded-lg"
-                        >
-                            <Text className="text-white text-xs font-bold">
-                                Test Lose
-                            </Text>
-                        </Pressable>
+                    <View className="bg-gray-800 rounded-xl p-4">
+                        <View className="flex-row justify-between items-center">
+                            <View className="items-center flex-1">
+                                <Text className="text-gray-400 text-xs mb-1">
+                                    Attempts
+                                </Text>
+                                <Text className="text-white text-lg font-bold">
+                                    {gameState.attempts}/{gameState.maxAttempts}
+                                </Text>
+                            </View>
+                            <View className="w-px h-8 bg-gray-700" />
+                            <View className="items-center flex-1">
+                                <Text className="text-gray-400 text-xs mb-1">
+                                    Status
+                                </Text>
+                                <Text
+                                    className={`text-lg font-bold ${
+                                        gameState.gameStatus === "active"
+                                            ? "text-primary"
+                                            : gameState.gameStatus === "won"
+                                            ? "text-accent"
+                                            : "text-red-400"
+                                    }`}
+                                >
+                                    {gameState.gameStatus.toUpperCase()}
+                                </Text>
+                            </View>
+                            {gameState.hasBounty && (
+                                <>
+                                    <View className="w-px h-8 bg-gray-700" />
+                                    <View className="items-center flex-1">
+                                        <Text className="text-gray-400 text-xs mb-1">
+                                            Bounty
+                                        </Text>
+                                        <Text className="text-accent text-lg font-bold">
+                                            {gameState.bountyAmount?.toFixed(1)}{" "}
+                                            STX
+                                        </Text>
+                                    </View>
+                                </>
+                            )}
+                        </View>
                     </View>
                 </View>
             </ScrollView>
@@ -216,7 +304,11 @@ const GameScreen: React.FC<GameScreenProps> = ({
             <Keyboard
                 onKeyPress={handleKeyPress}
                 letterStates={letterStates}
-                disabled={gameState.gameStatus !== "active"}
+                disabled={
+                    gameState.gameStatus !== "active" ||
+                    isLoading ||
+                    isProcessing
+                }
             />
 
             {/* Win Modal */}
@@ -251,16 +343,22 @@ const GameScreen: React.FC<GameScreenProps> = ({
                                 Your share of the bounty
                             </Text>
                             <Pressable
-                                disabled
-                                className="bg-gray-600 rounded-xl py-3 items-center opacity-50"
+                                onPress={handleClaimBounty}
+                                disabled={isClaimingBounty}
+                                className={`rounded-xl py-3 items-center ${
+                                    isClaimingBounty
+                                        ? "bg-gray-600 opacity-50"
+                                        : "bg-accent"
+                                }`}
                             >
-                                <Text className="text-white font-bold">
-                                    Claim Reward (Mock)
-                                </Text>
+                                {isClaimingBounty ? (
+                                    <ActivityIndicator color="#fff" />
+                                ) : (
+                                    <Text className="text-white font-bold">
+                                        Claim Reward
+                                    </Text>
+                                )}
                             </Pressable>
-                            <Text className="text-gray-500 text-xs text-center mt-2">
-                                Connect wallet to claim
-                            </Text>
                         </View>
                     )}
 

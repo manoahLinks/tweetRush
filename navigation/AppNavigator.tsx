@@ -2,19 +2,26 @@
  * AppNavigator.tsx
  *
  * Main navigation for TweetRush with top tabs
- * Tabs: Home, Play, Bounties, Leaderboard, Profile
+ * Tabs: Home, Play, Bounties, Leaderboard, Profile, Admin
  */
 
-import React, { useState } from "react";
-import { View, StyleSheet } from "react-native";
 import TopTabs from "@/components/TopTabs";
-import HomeScreen from "@/screens/HomeScreen";
-import PlayScreen from "@/screens/PlayScreen";
+import AdminScreen from "@/screens/AdminScreen";
 import BountiesScreen from "@/screens/BountiesScreen";
+import HomeScreen from "@/screens/HomeScreen";
 import LeaderboardScreen from "@/screens/LeaderboardScreen";
+import PlayScreen from "@/screens/PlayScreen";
 import ProfileScreen from "@/screens/ProfileScreen";
+import React, { useState } from "react";
+import { StyleSheet, View } from "react-native";
 
-export type TabName = "home" | "play" | "bounties" | "leaderboard" | "profile";
+export type TabName =
+    | "home"
+    | "play"
+    | "bounties"
+    | "leaderboard"
+    | "profile"
+    | "admin";
 
 const AppNavigator: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabName>("home");
@@ -33,6 +40,8 @@ const AppNavigator: React.FC = () => {
                 return <LeaderboardScreen />;
             case "profile":
                 return <ProfileScreen />;
+            case "admin":
+                return <AdminScreen />;
             default:
                 return (
                     <HomeScreen onNavigateToPlay={() => setActiveTab("play")} />
