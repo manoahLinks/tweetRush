@@ -1,14 +1,12 @@
 /**
  * AdminScreen.tsx
  *
- * Admin panel for managing words in the game
- * Only accessible to contract owner
+ * Word management screen for adding words to the game pool
+ * Community accessible - anyone can add words!
  */
 
 import Header from "@/components/game/Header";
-import { useWallet } from "@/contexts/WalletContext";
 import { useContract } from "@/hooks/useContract";
-import { CONTRACT_CONFIG } from "@/lib/contract-config";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
@@ -26,7 +24,6 @@ interface AdminScreenProps {
 }
 
 const AdminScreen: React.FC<AdminScreenProps> = ({ onBack }) => {
-    const { address } = useWallet();
     const { addWord, addMultipleWords, getTotalWordsCount, isProcessing } =
         useContract();
 
@@ -35,8 +32,6 @@ const AdminScreen: React.FC<AdminScreenProps> = ({ onBack }) => {
     const [totalWords, setTotalWords] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"single" | "bulk">("single");
-
-    const isOwner = address === CONTRACT_CONFIG.CONTRACT_ADDRESS;
 
     useEffect(() => {
         loadTotalWords();
@@ -144,45 +139,11 @@ const AdminScreen: React.FC<AdminScreenProps> = ({ onBack }) => {
         ]);
     };
 
-    if (!isOwner) {
-        return (
-            <View className="flex-1 bg-darkBg">
-                <Header
-                    title="Admin"
-                    subtitle="Contract owner only"
-                    onBack={onBack}
-                />
-                <View className="flex-1 items-center justify-center px-4">
-                    <View className="w-20 h-20 bg-red-900/30 rounded-full items-center justify-center mb-4">
-                        <Ionicons
-                            name="lock-closed"
-                            size={40}
-                            color="#EF4444"
-                        />
-                    </View>
-                    <Text className="text-white text-xl font-bold mb-2">
-                        Access Denied
-                    </Text>
-                    <Text className="text-gray-400 text-center">
-                        This section is only accessible to the contract owner.
-                    </Text>
-                    <Text className="text-gray-500 text-xs mt-4 text-center">
-                        Owner: {CONTRACT_CONFIG.CONTRACT_ADDRESS.slice(0, 8)}...
-                        {CONTRACT_CONFIG.CONTRACT_ADDRESS.slice(-6)}
-                    </Text>
-                    <Text className="text-gray-500 text-xs mt-1 text-center">
-                        You: {address?.slice(0, 8)}...{address?.slice(-6)}
-                    </Text>
-                </View>
-            </View>
-        );
-    }
-
     return (
         <View className="flex-1 bg-darkBg">
             <Header
-                title="Admin"
-                subtitle="Manage word pool"
+                title="Words"
+                subtitle="Add words to the pool"
                 onBack={onBack}
                 rightComponent={
                     <Pressable onPress={loadTotalWords}>
@@ -499,22 +460,22 @@ const AdminScreen: React.FC<AdminScreenProps> = ({ onBack }) => {
                     </Pressable>
                 </View>
 
-                {/* Warning Info */}
+                {/* Info Banner */}
                 <View className="px-4 mt-6">
-                    <View className="bg-yellow-600/20 border border-yellow-500/30 rounded-2xl p-4">
+                    <View className="bg-primary/20 border border-primary/30 rounded-2xl p-4">
                         <View className="flex-row items-start">
                             <Ionicons
-                                name="warning"
+                                name="information-circle"
                                 size={24}
-                                color="#F59E0B"
+                                color="#16A349"
                             />
                             <View className="flex-1 ml-3">
-                                <Text className="text-yellow-400 font-bold mb-1">
-                                    Admin Only
+                                <Text className="text-primary font-bold mb-1">
+                                    Community Word Pool
                                 </Text>
                                 <Text className="text-gray-300 text-sm">
-                                    Only the contract owner can add words. Each
-                                    transaction requires gas fees.
+                                    Anyone can add words to the pool! Each
+                                    transaction requires a small gas fee.
                                 </Text>
                             </View>
                         </View>

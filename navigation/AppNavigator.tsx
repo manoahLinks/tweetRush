@@ -2,7 +2,7 @@
  * AppNavigator.tsx
  *
  * Main navigation for TweetRush with top tabs
- * Tabs: Home, Play, Bounties, Leaderboard, Profile, Admin
+ * Tabs: Home, Play, Bounties, Leaderboard, Profile, Words
  */
 
 import TopTabs from "@/components/TopTabs";

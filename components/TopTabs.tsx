@@ -2,7 +2,7 @@
  * TopTabs.tsx
  *
  * Custom top tab navigation component
- * Shows 6 tabs: Home, Play, Bounties, Leaderboard, Profile, Admin
+ * Shows 6 tabs: Home, Play, Bounties, Leaderboard, Profile, Words
  */
 
 import { TabName } from "@/navigation/AppNavigator";
@@ -33,7 +33,7 @@ const tabs = [
         icon: "podium" as const,
     },
     { name: "profile" as TabName, label: "Profile", icon: "person" as const },
-    { name: "admin" as TabName, label: "Admin", icon: "settings" as const },
+    { name: "admin" as TabName, label: "Words", icon: "book" as const },
 ];
 
 const TopTabs: React.FC<TopTabsProps> = ({ activeTab, onTabChange }) => {

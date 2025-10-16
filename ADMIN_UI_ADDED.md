@@ -41,12 +41,6 @@ A comprehensive admin panel for managing the word pool with:
 -   💻 Programming Languages (10 words): REACT, SWIFT, JAVA, etc.
 -   📝 Common Words (10 words): HAPPY, BRAVE, QUICK, etc.
 
-**Security:**
-
--   Only contract owner can access
--   Shows access denied screen for non-owners
--   Displays owner address vs current user address
-
 **Stats Display:**
 
 -   Shows total words in pool
@@ -61,9 +55,9 @@ A comprehensive admin panel for managing the word pool with:
 
 **After:**
 
--   Home | Play | Bounties | Leaderboard | Profile | **Admin**
+-   Home | Play | Bounties | Leaderboard | Profile | **Words**
 
-The Admin tab is available to all users, but shows an access control screen if not the contract owner.
+The Words tab is accessible to all users - everyone can contribute to the word pool!
 
 ### 4. Files Changed
 
@@ -133,9 +127,9 @@ Quick Add Templates:
 
 ## Usage Examples
 
-### As Contract Owner
+### For Any User
 
-1. **Navigate to Admin Tab** - Tap "Admin" in top tabs
+1. **Navigate to Words Tab** - Tap "Words" in top tabs
 2. **Add Single Word:**
 
     - Tap "Single Word"
@@ -150,12 +144,6 @@ Quick Add Templates:
     - Tap "Import Words"
     - Confirm in alert
     - Approve transaction
-
-### As Regular User
-
-1. Navigate to Admin Tab
-2. See "Access Denied" screen
-3. Information shows you need to be the contract owner
 
 ## Word Templates Included
 
@@ -197,12 +185,12 @@ const response = await getTotalWordsCount();
 console.log(response.value); // e.g., 25
 ```
 
-## Security
+## Community Features
 
-✅ Only contract owner can add words  
-✅ Access control UI for non-owners  
-✅ Shows owner vs user address comparison  
-✅ All transactions require owner's signature
+✅ **Open Access** - Any user can add words  
+✅ **Community Pool** - Everyone contributes to the word collection  
+✅ **Gas Fees** - Each user pays for their own word additions  
+✅ **No Restrictions** - Encourage community participation
 
 ## Validation Rules
 
