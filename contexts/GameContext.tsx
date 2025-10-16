@@ -6,17 +6,17 @@
  */
 
 import { useContract } from "@/hooks/useContract";
+import * as ContractUtils from "@/lib/contract-utils";
 import { invalidateCacheForAddress } from "@/lib/contract-utils";
 import { gameStorage } from "@/lib/game-storage";
-import * as ContractUtils from "@/lib/contract-utils";
 import { GameState, GameTile, TileState } from "@/mocks";
 import React, {
     createContext,
     useCallback,
     useContext,
     useEffect,
-    useState,
     useRef,
+    useState,
 } from "react";
 import { useWallet } from "./WalletContext";
 
@@ -84,8 +84,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
      */
     const evaluateGuess = (guess: string, answer: string): number[] => {
         const result: number[] = [];
-        const answerChars = answer.split('');
-        const guessChars = guess.split('');
+        const answerChars = answer.split("");
+        const guessChars = guess.split("");
         const used: boolean[] = new Array(5).fill(false);
 
         // First pass: mark correct positions (green)
@@ -122,7 +122,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
      * Convert blockchain game data to UI GameState
      */
     const convertToGameState = useCallback(
-        async (blockchainGame: any, lastGuessResult?: any): Promise<GameState | null> => {
+        async (
+            blockchainGame: any,
+            lastGuessResult?: any
+        ): Promise<GameState | null> => {
             try {
                 if (!blockchainGame || !blockchainGame.value) {
                     return null;
@@ -137,31 +140,37 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                 const maxAttempts = 6;
                 const won = game.won?.value || false;
                 const guesses = game.guesses?.value || [];
-                
+
                 // Store current game ID
                 currentGameIdRef.current = gameId;
-                
+
                 // Determine game status
                 const isComplete = won || attempts >= maxAttempts;
-                const gameStatus = won ? "won" : (isComplete ? "lost" : "active");
+                const gameStatus = won ? "won" : isComplete ? "lost" : "active";
 
                 // Get target word if game is complete
                 let targetWord = "?????";
                 if (isComplete) {
                     // Try to fetch the word from the blockchain
                     try {
-                        const wordData = await ContractUtils.getWordAtIndex(wordIndex);
+                        const wordData = await ContractUtils.getWordAtIndex(
+                            wordIndex
+                        );
                         if (wordData?.value) {
                             targetWord = wordData.value || "?????";
-                            console.log(`[Game] Fetched answer from blockchain: ${targetWord}`);
+                            console.log(
+                                `[Game] Fetched answer from blockchain: ${targetWord}`
+                            );
                         }
                     } catch (e) {
-                        console.log("[Game] Could not fetch word, using placeholder");
+                        console.log(
+                            "[Game] Could not fetch word, using placeholder"
+                        );
                     }
                 }
 
                 // Get stored evaluations for this game
-                const storedEvaluations = address 
+                const storedEvaluations = address
                     ? await gameStorage.getGameEvaluations(address, gameId)
                     : [];
 
@@ -175,27 +184,33 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                     if (i < guesses.length) {
                         // This row has a submitted guess
                         const guessWord = guesses[i];
-                        
+
                         // Get evaluation result for this guess
                         let evaluation: number[] | null = null;
-                        
+
                         // Try to get from stored evaluations first
-                        const storedEval = storedEvaluations.find(e => e.guess === guessWord);
+                        const storedEval = storedEvaluations.find(
+                            (e) => e.guess === guessWord
+                        );
                         if (storedEval) {
                             evaluation = storedEval.result;
-                            console.log(`[Game] Using stored evaluation for guess: ${guessWord}`);
+                            console.log(
+                                `[Game] Using stored evaluation for guess: ${guessWord}`
+                            );
                         }
                         // If we have the answer (game complete), evaluate locally
                         else if (targetWord !== "?????") {
                             evaluation = evaluateGuess(guessWord, targetWord);
-                            console.log(`[Game] Evaluating with known answer: ${guessWord} vs ${targetWord}`);
+                            console.log(
+                                `[Game] Evaluating with known answer: ${guessWord} vs ${targetWord}`
+                            );
                         }
 
                         // Create tiles with proper states
                         for (let j = 0; j < 5; j++) {
                             const letter = guessWord[j] || null;
                             let state: TileState = "empty";
-                            
+
                             if (letter) {
                                 if (evaluation) {
                                     // We have evaluation - show colors
@@ -271,6 +286,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
      */
     const loadActiveGame = useCallback(async () => {
         if (!address) {
+            console.log("[GameContext] No address, skipping load");
             setGameState(null);
             return;
         }
@@ -279,25 +295,38 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
             setIsLoading(true);
             setError(null);
 
+            console.log("[GameContext] Checking for active game...");
             const hasGame = await checkHasActiveGame(address);
+            console.log("[GameContext] Has active game response:", hasGame);
 
             if (!hasGame?.value) {
+                console.log("[GameContext] No active game found");
                 setGameState(null);
                 setLastGuessResult(null);
                 return;
             }
 
+            console.log("[GameContext] Loading active game data...");
             const activeGame = await getActiveGameData(address);
-            const convertedState = await convertToGameState(activeGame, lastGuessResult);
+            console.log(
+                "[GameContext] Active game data:",
+                JSON.stringify(activeGame, null, 2)
+            );
+
+            const convertedState = await convertToGameState(
+                activeGame,
+                lastGuessResult
+            );
+            console.log("[GameContext] Converted game state:", convertedState);
             setGameState(convertedState);
         } catch (err: any) {
-            console.error("Error loading active game:", err);
+            console.error("[GameContext] Error loading active game:", err);
             setError(err.message || "Failed to load game");
             setGameState(null);
         } finally {
             setIsLoading(false);
         }
-    }, [address, checkHasActiveGame, getActiveGameData, convertToGameState]);
+    }, [address]);
 
     /**
      * Refresh game state from blockchain
@@ -309,16 +338,20 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
             setIsRefreshing(true);
             setError(null);
 
+            console.log("[GameContext] Refreshing game state...");
             const activeGame = await getActiveGameData(address);
-            const convertedState = await convertToGameState(activeGame, lastGuessResult);
+            const convertedState = await convertToGameState(
+                activeGame,
+                lastGuessResult
+            );
             setGameState(convertedState);
         } catch (err: any) {
-            console.error("Error refreshing game state:", err);
+            console.error("[GameContext] Error refreshing game state:", err);
             setError(err.message || "Failed to refresh game");
         } finally {
             setIsRefreshing(false);
         }
-    }, [address, getActiveGameData, convertToGameState]);
+    }, [address]);
 
     /**
      * Start a new game
@@ -338,7 +371,9 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
             setIsLoading(true);
             setError(null);
 
+            console.log("[GameContext] Starting new game...");
             const txId = await startNewGame();
+            console.log("[GameContext] Start game txId:", txId);
 
             if (!txId) {
                 setError("Failed to start game");
@@ -347,24 +382,29 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
             // Invalidate cache for this address after transaction
             if (address) {
+                console.log("[GameContext] Invalidating cache for address");
                 invalidateCacheForAddress(address);
             }
 
             // Wait a moment for transaction to be processed
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+            console.log(
+                "[GameContext] Waiting for transaction confirmation..."
+            );
+            await new Promise((resolve) => setTimeout(resolve, 5000));
 
             // Reload game state
+            console.log("[GameContext] Reloading game state...");
             await loadActiveGame();
 
             return true;
         } catch (err: any) {
-            console.error("Error starting game:", err);
+            console.error("[GameContext] Error starting game:", err);
             setError(err.message || "Failed to start game");
             return false;
         } finally {
             setIsLoading(false);
         }
-    }, [canPlay, hasActiveGame, startNewGame, loadActiveGame]);
+    }, [canPlay, hasActiveGame, address]);
 
     /**
      * Submit a guess
@@ -385,15 +425,13 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                 setIsLoading(true);
                 setError(null);
 
-                // First, optimistically update UI by evaluating the guess locally
-                // This gives immediate visual feedback
+                console.log(`[GameContext] Submitting guess: ${guess}`);
+
+                // First, optimistically update UI
                 if (gameState) {
-                    const gameId = currentGameIdRef.current || 0;
-                    
-                    // Create updated grid with the new guess
                     const newGrid = [...gameState.grid];
                     const currentRow = gameState.currentAttempt;
-                    
+
                     // Add the guess to the grid temporarily with filled state
                     for (let j = 0; j < 5; j++) {
                         newGrid[currentRow][j] = {
@@ -406,35 +444,43 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                     setGameState({
                         ...gameState,
                         grid: newGrid,
+                        currentAttempt: currentRow + 1,
+                        attempts: gameState.attempts + 1,
                     });
                 }
 
                 // Submit the guess transaction
                 const { txId } = await makeGuess(guess);
+                console.log(`[GameContext] Guess transaction ID: ${txId}`);
 
                 if (!txId) {
                     setError("Failed to submit guess");
-                    // Revert optimistic update
+                    console.log("[GameContext] No txId returned, reverting...");
                     await loadActiveGame();
                     return false;
                 }
 
-                console.log(`[Game] Guess submitted, waiting for confirmation...`);
-
                 // Invalidate cache for this address after transaction
                 if (address) {
+                    console.log("[GameContext] Invalidating cache after guess");
                     invalidateCacheForAddress(address);
                 }
 
                 // Wait for transaction to be processed and confirmed
-                await new Promise((resolve) => setTimeout(resolve, 4000));
+                console.log(
+                    "[GameContext] Waiting for transaction confirmation..."
+                );
+                await new Promise((resolve) => setTimeout(resolve, 5000));
 
                 // Reload game state from blockchain
+                console.log(
+                    "[GameContext] Reloading game state after guess..."
+                );
                 await loadActiveGame();
 
                 return true;
             } catch (err: any) {
-                console.error("Error submitting guess:", err);
+                console.error("[GameContext] Error submitting guess:", err);
                 setError(err.message || "Failed to submit guess");
                 // Revert optimistic update
                 await loadActiveGame();
@@ -443,7 +489,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
                 setIsLoading(false);
             }
         },
-        [canPlay, hasActiveGame, makeGuess, getActiveGameData, address, gameState, loadActiveGame]
+        [canPlay, hasActiveGame, address, gameState]
     );
 
     /**

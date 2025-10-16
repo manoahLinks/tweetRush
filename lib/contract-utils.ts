@@ -35,10 +35,18 @@ export async function callReadOnly<T = any>(
     // Get appropriate TTL for this operation
     const ttl = apiCache.getCacheTTL(functionName);
 
+    console.log(`[ContractUtils] callReadOnly: ${functionName}`, {
+        functionArgs,
+        senderAddress,
+    });
+
     try {
-        return await apiCache.getCached(
+        const result = await apiCache.getCached(
             cacheKey,
             async () => {
+                console.log(
+                    `[ContractUtils] Fetching ${functionName} from blockchain...`
+                );
                 const response = await fetchCallReadOnlyFunction({
                     contractAddress: CONTRACT_CONFIG.CONTRACT_ADDRESS,
                     contractName: CONTRACT_CONFIG.CONTRACT_NAME,
@@ -49,13 +57,23 @@ export async function callReadOnly<T = any>(
                     network: CONTRACT_CONFIG.NETWORK,
                 });
 
+                console.log(
+                    `[ContractUtils] ${functionName} raw response:`,
+                    response
+                );
                 // Convert Clarity value to JavaScript value
-                return cvToValue(response) as T;
+                const converted = cvToValue(response) as T;
+                console.log(
+                    `[ContractUtils] ${functionName} converted:`,
+                    converted
+                );
+                return converted;
             },
             ttl
         );
+        return result;
     } catch (error) {
-        console.error(`Error calling ${functionName}:`, error);
+        console.error(`[ContractUtils] Error calling ${functionName}:`, error);
         throw error;
     }
 }

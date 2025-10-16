@@ -219,14 +219,18 @@ export function useContract() {
      * Start a new game
      */
     async function startNewGame() {
+        console.log("[useContract] startNewGame called");
         const txOptions = ContractUtils.startGame();
-        return await callContract(
+        console.log("[useContract] Start game options:", txOptions);
+        const result = await callContract(
             txOptions.functionName,
             txOptions.functionArgs,
             (txId) => {
-                console.log("Game started:", txId);
+                console.log("[useContract] Game started with txId:", txId);
             }
         );
+        console.log("[useContract] startNewGame result:", result);
+        return result;
     }
 
     /**
@@ -234,16 +238,21 @@ export function useContract() {
      * @param guess - 5-letter word guess
      * @returns Transaction ID and guess result
      */
-    async function makeGuess(guess: string): Promise<{txId: string | null; result: any}> {
+    async function makeGuess(
+        guess: string
+    ): Promise<{ txId: string | null; result: any }> {
+        console.log("[useContract] makeGuess called with:", guess);
         const txOptions = ContractUtils.submitGuess(guess);
+        console.log("[useContract] Submit guess options:", txOptions);
         const txId = await callContract(
             txOptions.functionName,
             txOptions.functionArgs,
             (txId) => {
-                console.log("Guess submitted:", txId);
+                console.log("[useContract] Guess submitted with txId:", txId);
             }
         );
-        
+        console.log("[useContract] makeGuess result txId:", txId);
+
         // Return both txId and a placeholder for result (will be fetched after confirmation)
         return { txId, result: null };
     }
@@ -267,7 +276,13 @@ export function useContract() {
      * @param playerAddress - Player's Stacks address
      */
     async function getActiveGameData(playerAddress: string) {
-        return await ContractUtils.getActiveGame(playerAddress);
+        console.log(
+            "[useContract] getActiveGameData called for:",
+            playerAddress
+        );
+        const result = await ContractUtils.getActiveGame(playerAddress);
+        console.log("[useContract] getActiveGameData result:", result);
+        return result;
     }
 
     /**
@@ -275,7 +290,13 @@ export function useContract() {
      * @param playerAddress - Player's Stacks address
      */
     async function checkHasActiveGame(playerAddress: string) {
-        return await ContractUtils.hasActiveGame(playerAddress);
+        console.log(
+            "[useContract] checkHasActiveGame called for:",
+            playerAddress
+        );
+        const result = await ContractUtils.hasActiveGame(playerAddress);
+        console.log("[useContract] checkHasActiveGame result:", result);
+        return result;
     }
 
     /**
