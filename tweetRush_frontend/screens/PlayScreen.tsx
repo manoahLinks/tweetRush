@@ -4,47 +4,98 @@
  * Main play screen that handles game flow:
  * - Shows active game if one exists
  * - Shows "Start New Game" if no active game
- * - Integrates with GameContext for real blockchain data
+ * - Uses useContract directly like AdminScreen
  */
 
-import { useGame } from "@/contexts/GameContext";
-import { useWallet } from "@/contexts/WalletContext";
+import { useContract } from "@/hooks/useContract";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import GameScreen from "./GameScreen";
 
 const PlayScreen: React.FC = () => {
-    const { gameState, isLoading, startGame, hasActiveGame } = useGame();
-    const { address, isConnected } = useWallet();
-    const [isStarting, setIsStarting] = useState(false);
+    const {
+        startNewGame,
+        getActiveGameData,
+        checkHasActiveGame,
+        isProcessing,
+        address,
+        isConnected,
+    } = useContract();
+
+    const [hasActiveGame, setHasActiveGame] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Check for active game on mount
+    useEffect(() => {
+        loadActiveGameStatus();
+    }, []);
+
+    const loadActiveGameStatus = async () => {
+        if (!address) {
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            setIsLoading(true);
+            console.log("[PlayScreen] Checking for active game...");
+            const response = await checkHasActiveGame(address);
+            console.log("[PlayScreen] Has active game:", response);
+            setHasActiveGame(response?.value || false);
+        } catch (error) {
+            console.error("[PlayScreen] Error checking active game:", error);
+            setHasActiveGame(false);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handleStartGame = async () => {
+        console.log("=== START GAME BUTTON CLICKED ===");
+        console.log("isConnected:", isConnected);
+        console.log("address:", address);
+        console.log("hasActiveGame:", hasActiveGame);
+
         if (!isConnected) {
+            console.log("NOT CONNECTED");
             Alert.alert("Wallet Required", "Please complete onboarding first");
             return;
         }
 
-        setIsStarting(true);
+        if (hasActiveGame) {
+            console.log("ALREADY HAS ACTIVE GAME");
+            Alert.alert(
+                "Active Game",
+                "You already have an active game. Complete it first."
+            );
+            return;
+        }
+
         try {
-            const success = await startGame();
-            if (!success) {
-                Alert.alert(
-                    "Failed to Start",
-                    "Unable to start a new game. Please try again."
-                );
+            console.log("Calling startNewGame()...");
+            const txId = await startNewGame();
+            console.log("startNewGame() returned:", txId);
+
+            if (txId) {
+                Alert.alert("Success", "Game started! Loading...");
+                // Wait for transaction confirmation
+                setTimeout(() => {
+                    loadActiveGameStatus();
+                }, 5000);
             }
         } catch (error: any) {
             console.error("Error starting game:", error);
-            Alert.alert("Error", error.message || "Failed to start game");
-        } finally {
-            setIsStarting(false);
+            Alert.alert(
+                "Error",
+                error.message || "Failed to start game. Check console."
+            );
         }
     };
 
     // If there's an active game, show the game screen
-    if (hasActiveGame && gameState) {
-        return <GameScreen onBack={() => {}} />;
+    if (hasActiveGame) {
+        return <GameScreen onBack={loadActiveGameStatus} />;
     }
 
     // Loading state
@@ -172,14 +223,14 @@ const PlayScreen: React.FC = () => {
                 {/* Start Game Button */}
                 <Pressable
                     onPress={handleStartGame}
-                    disabled={isStarting || !isConnected}
+                    disabled={isProcessing || !isConnected}
                     className={`w-full rounded-2xl py-5 items-center ${
-                        isStarting || !isConnected
+                        isProcessing || !isConnected
                             ? "bg-gray-600 opacity-50"
                             : "bg-primary"
                     }`}
                 >
-                    {isStarting ? (
+                    {isProcessing ? (
                         <ActivityIndicator color="#fff" />
                     ) : (
                         <>

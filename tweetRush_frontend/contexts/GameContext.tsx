@@ -357,12 +357,20 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
      * Start a new game
      */
     const startGame = useCallback(async (): Promise<boolean> => {
+        console.log("[GameContext] startGame() called");
+        console.log("[GameContext] canPlay:", canPlay);
+        console.log("[GameContext] hasActiveGame:", hasActiveGame);
+        console.log("[GameContext] address:", address);
+        console.log("[GameContext] isConnected:", isConnected);
+
         if (!canPlay) {
+            console.error("[GameContext] Cannot play - not connected");
             setError("Cannot start game. Please connect your wallet.");
             return false;
         }
 
         if (hasActiveGame) {
+            console.error("[GameContext] Already has active game");
             setError("You already have an active game. Complete it first.");
             return false;
         }
@@ -371,12 +379,13 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
             setIsLoading(true);
             setError(null);
 
-            console.log("[GameContext] Starting new game...");
+            console.log("[GameContext] Calling startNewGame()...");
             const txId = await startNewGame();
-            console.log("[GameContext] Start game txId:", txId);
+            console.log("[GameContext] startNewGame() returned txId:", txId);
 
             if (!txId) {
-                setError("Failed to start game");
+                console.error("[GameContext] No transaction ID returned");
+                setError("Failed to start game - no transaction ID");
                 return false;
             }
 
@@ -388,23 +397,35 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
             // Wait a moment for transaction to be processed
             console.log(
-                "[GameContext] Waiting for transaction confirmation..."
+                "[GameContext] Waiting for transaction confirmation (5s)..."
             );
             await new Promise((resolve) => setTimeout(resolve, 5000));
 
             // Reload game state
             console.log("[GameContext] Reloading game state...");
             await loadActiveGame();
+            console.log("[GameContext] Game state reloaded successfully");
 
             return true;
         } catch (err: any) {
             console.error("[GameContext] Error starting game:", err);
+            console.error(
+                "[GameContext] Error details:",
+                JSON.stringify(err, null, 2)
+            );
             setError(err.message || "Failed to start game");
             return false;
         } finally {
             setIsLoading(false);
         }
-    }, [canPlay, hasActiveGame, address]);
+    }, [
+        canPlay,
+        hasActiveGame,
+        address,
+        isConnected,
+        startNewGame,
+        loadActiveGame,
+    ]);
 
     /**
      * Submit a guess

@@ -2,9 +2,9 @@ import Header from "@/components/game/Header";
 import Keyboard from "@/components/game/Keyboard";
 import Tile from "@/components/game/Tile";
 import Modal from "@/components/ui/Modal";
-import { useGame } from "@/contexts/GameContext";
 import { useContract } from "@/hooks/useContract";
-import { LetterState } from "@/mocks";
+import { LetterState, GameTile, TileState } from "@/mocks";
+import { gameStorage } from "@/lib/game-storage";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
@@ -22,13 +22,14 @@ interface GameScreenProps {
 
 const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
     const {
-        gameState,
-        isLoading,
-        submitGuess: submitGameGuess,
-        forfeitGame: forfeitGameAction,
-        refreshGameState,
-    } = useGame();
-    const { claimBountyReward, isProcessing } = useContract();
+        getActiveGameData,
+        makeGuess,
+        forfeitCurrentGame,
+        claimBountyReward,
+        getBountyData,
+        isProcessing,
+        address,
+    } = useContract();
 
     const [currentInput, setCurrentInput] = useState("");
     const [letterStates, setLetterStates] = useState<
@@ -38,6 +39,15 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
     const [showLoseModal, setShowLoseModal] = useState(false);
     const [showForfeitModal, setShowForfeitModal] = useState(false);
     const [isClaimingBounty, setIsClaimingBounty] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [gameState, setGameState] = useState<any>(null);
+
+    // ===== ALL HOOKS MUST BE BEFORE ANY CONDITIONAL RETURNS =====
+
+    // Load game on mount
+    useEffect(() => {
+        loadGame();
+    }, []);
 
     // Check for game completion
     useEffect(() => {
@@ -50,27 +60,13 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
         }
     }, [gameState?.gameStatus]);
 
-    // If no game state, show loading or prompt
-    if (!gameState) {
-        return (
-            <View className="flex-1 bg-darkBg items-center justify-center">
-                <ActivityIndicator size="large" color="#16A349" />
-                <Text className="text-white text-lg mt-4">Loading game...</Text>
-                <Pressable
-                    onPress={onBack}
-                    className="mt-6 bg-gray-700 px-6 py-3 rounded-xl"
-                >
-                    <Text className="text-white font-bold">Go Back</Text>
-                </Pressable>
-            </View>
-        );
-    }
-
     // Calculate letter states from game grid
     useEffect(() => {
+        if (!gameState) return;
+
         const states: Record<string, LetterState> = {};
-        gameState.grid.forEach((row) => {
-            row.forEach((tile) => {
+        gameState.grid.forEach((row: any) => {
+            row.forEach((tile: any) => {
                 if (
                     tile.letter &&
                     tile.state !== "empty" &&
@@ -94,6 +90,255 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
         setLetterStates(states);
     }, [gameState]);
 
+    // ===== ALL FUNCTION DEFINITIONS =====
+
+    /**
+     * Evaluate a guess locally (same logic as contract)
+     * Returns array of: 2 = correct, 1 = present, 0 = absent
+     */
+    const evaluateGuessLocally = (guess: string, answer: string): number[] => {
+        const result: number[] = [];
+        const answerChars = answer.toUpperCase().split("");
+        const guessChars = guess.toUpperCase().split("");
+        const used: boolean[] = new Array(5).fill(false);
+
+        // First pass: mark correct positions (green)
+        for (let i = 0; i < 5; i++) {
+            if (guessChars[i] === answerChars[i]) {
+                result[i] = 2; // correct
+                used[i] = true;
+            }
+        }
+
+        // Second pass: mark wrong positions (yellow) and absent (gray)
+        for (let i = 0; i < 5; i++) {
+            if (result[i] === 2) continue; // already marked as correct
+
+            let found = false;
+            for (let j = 0; j < 5; j++) {
+                if (!used[j] && guessChars[i] === answerChars[j] && i !== j) {
+                    result[i] = 1; // present but wrong position
+                    used[j] = true;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                result[i] = 0; // not in word
+            }
+        }
+
+        return result;
+    };
+
+    const loadGame = async () => {
+        if (!address) {
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            setIsLoading(true);
+            console.log("[GameScreen] Loading game data...");
+            const response = await getActiveGameData(address);
+            console.log("[GameScreen] Game data:", response);
+
+            if (response?.value) {
+                // Convert blockchain data to UI format
+                const game = response.value;
+                const attempts = game.attempts?.value || 0;
+                const won = game.won?.value || false;
+                const maxAttempts = 6;
+                const isComplete = won || attempts >= maxAttempts;
+                const wordIndex = game["word-index"]?.value || 0;
+
+                // Get all guesses
+                const guesses = game.guesses?.value || [];
+                const gameId = game["game-id"]?.value || 0;
+                console.log("[GameScreen] ========== LOADING GAME ==========");
+                console.log(
+                    "[GameScreen] Raw game data:",
+                    JSON.stringify(game, null, 2)
+                );
+                console.log("[GameScreen] Guesses from blockchain:", guesses);
+                console.log(
+                    "[GameScreen] Guesses type:",
+                    typeof guesses,
+                    Array.isArray(guesses)
+                );
+                console.log("[GameScreen] Number of guesses:", guesses.length);
+                console.log("[GameScreen] Game ID:", gameId);
+                console.log("[GameScreen] Attempts:", attempts);
+
+                // Get stored evaluations
+                const storedEvals = address
+                    ? await gameStorage.getGameEvaluations(address, gameId)
+                    : [];
+                console.log("[GameScreen] Stored evaluations:", storedEvals);
+
+                // Try to get the answer word (only available if game is complete)
+                let targetWord = "?????";
+                let hasAnswer = false;
+
+                // If game is complete, try to fetch the answer
+                if (isComplete) {
+                    try {
+                        const wordResponse = await getActiveGameData(address);
+                        // The answer might be in the response if game is complete
+                        // For now, we'll use stored evaluations
+                        console.log(
+                            "[GameScreen] Game is complete, answer should be available"
+                        );
+                    } catch (err) {
+                        console.log(
+                            "[GameScreen] Could not fetch answer:",
+                            err
+                        );
+                    }
+                }
+
+                const grid: GameTile[][] = [];
+
+                console.log("[GameScreen] ========== BUILDING GRID ==========");
+                for (let i = 0; i < maxAttempts; i++) {
+                    const row: GameTile[] = [];
+
+                    if (i < guesses.length) {
+                        let guess = guesses[i];
+                        console.log(
+                            `[GameScreen] Row ${i + 1}: Raw guess:`,
+                            guess
+                        );
+                        console.log(
+                            `[GameScreen] Row ${i + 1}: Guess type:`,
+                            typeof guess
+                        );
+
+                        // Convert guess to string if needed and ensure uppercase
+                        const guessString = String(guess).toUpperCase();
+                        console.log(
+                            `[GameScreen] Row ${i + 1}: Guess string:`,
+                            guessString
+                        );
+                        console.log(
+                            `[GameScreen] Row ${i + 1}: Guess length:`,
+                            guessString.length
+                        );
+
+                        // Try to find stored evaluation for this guess
+                        const storedEval = storedEvals.find(
+                            (e) => e.guess === guessString
+                        );
+
+                        if (storedEval) {
+                            // We have the evaluation, show colors!
+                            console.log(
+                                `[GameScreen] Row ${i + 1}: Found evaluation:`,
+                                storedEval.result
+                            );
+                            for (let j = 0; j < 5; j++) {
+                                const evalResult = storedEval.result[j];
+                                const letter = guessString[j];
+                                let state: TileState = "filled";
+
+                                if (evalResult === 2) {
+                                    state = "correct"; // Green
+                                } else if (evalResult === 1) {
+                                    state = "present"; // Yellow
+                                } else {
+                                    state = "absent"; // Gray
+                                }
+
+                                console.log(
+                                    `[GameScreen] Row ${i + 1}, Col ${
+                                        j + 1
+                                    }: letter="${letter}", state="${state}"`
+                                );
+                                row.push({
+                                    letter: letter,
+                                    state,
+                                });
+                            }
+                        } else {
+                            // No evaluation yet, show letters as filled (LIGHT GRAY)
+                            console.log(
+                                `[GameScreen] Row ${
+                                    i + 1
+                                }: No evaluation, showing letters as filled`
+                            );
+                            for (let j = 0; j < 5; j++) {
+                                const letter = guessString[j];
+                                console.log(
+                                    `[GameScreen] Row ${i + 1}, Col ${
+                                        j + 1
+                                    }: letter="${letter}" state="filled"`
+                                );
+                                row.push({
+                                    letter: letter,
+                                    state: "filled" as TileState,
+                                });
+                            }
+                        }
+                    } else {
+                        // Empty row
+                        console.log(`[GameScreen] Row ${i + 1}: Empty row`);
+                        for (let j = 0; j < 5; j++) {
+                            row.push({
+                                letter: null,
+                                state: "empty" as TileState,
+                            });
+                        }
+                    }
+                    grid.push(row);
+                    console.log(`[GameScreen] Row ${i + 1} complete:`, row);
+                }
+                console.log("[GameScreen] ========== GRID COMPLETE ==========");
+                console.log("[GameScreen] Final grid:", grid);
+
+                setGameState({
+                    wordIndex,
+                    targetWord,
+                    attempts,
+                    maxAttempts,
+                    currentAttempt: attempts,
+                    grid,
+                    gameStatus: won ? "won" : isComplete ? "lost" : "active",
+                    hasBounty: false,
+                    bountyAmount: 0,
+                    guesses, // Store guesses for reference
+                });
+            } else {
+                console.log("[GameScreen] No active game");
+                onBack();
+            }
+        } catch (error) {
+            console.error("[GameScreen] Error loading game:", error);
+            Alert.alert("Error", "Failed to load game");
+            onBack();
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // ===== CONDITIONAL RENDER (AFTER ALL HOOKS) =====
+
+    // If no game state, show loading or prompt
+    if (isLoading || !gameState) {
+        return (
+            <View className="flex-1 bg-darkBg items-center justify-center">
+                <ActivityIndicator size="large" color="#16A349" />
+                <Text className="text-white text-lg mt-4">Loading game...</Text>
+                <Pressable
+                    onPress={onBack}
+                    className="mt-6 bg-gray-700 px-6 py-3 rounded-xl"
+                >
+                    <Text className="text-white font-bold">Go Back</Text>
+                </Pressable>
+            </View>
+        );
+    }
+
     const handleKeyPress = async (key: string) => {
         if (gameState.gameStatus !== "active" || isLoading || isProcessing)
             return;
@@ -101,21 +346,95 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
         if (key === "⌫") {
             setCurrentInput((prev) => prev.slice(0, -1));
         } else if (key === "ENTER") {
+            // ENTER key can still be used to submit if user wants
             if (currentInput.length === 5) {
-                const success = await submitGameGuess(currentInput);
-                if (success) {
-                    setCurrentInput("");
-                } else {
-                    Alert.alert(
-                        "Error",
-                        "Failed to submit guess. Please try again."
-                    );
-                }
+                await submitGuess(currentInput);
             } else {
                 Alert.alert("Invalid", "Word must be 5 letters");
             }
         } else if (currentInput.length < 5) {
-            setCurrentInput((prev) => prev + key);
+            // Add the letter
+            const newInput = currentInput + key;
+            setCurrentInput(newInput);
+
+            // Auto-submit when 5th letter is typed
+            if (newInput.length === 5) {
+                console.log(
+                    "[GameScreen] 5th letter typed, auto-submitting..."
+                );
+                await submitGuess(newInput);
+            }
+        }
+    };
+
+    /**
+     * Generate a demo evaluation (for demo purposes)
+     * Creates a realistic-looking evaluation with mix of colors
+     */
+    const generateDemoEvaluation = (guess: string): number[] => {
+        // Create a varied evaluation for demo
+        // This gives some green, yellow, and gray tiles for visual demo
+        const evaluation: number[] = [];
+
+        for (let i = 0; i < 5; i++) {
+            // Use a simple algorithm to create varied results
+            const charCode = guess.charCodeAt(i);
+            const positionFactor = i + 1;
+            const combined = (charCode + positionFactor) % 3;
+
+            // Distribute colors somewhat realistically:
+            // - First and last positions more likely to be correct (green)
+            // - Middle positions mix of yellow and gray
+            if (i === 0 || i === 4) {
+                evaluation.push(combined === 0 ? 2 : combined === 1 ? 1 : 0);
+            } else {
+                evaluation.push(combined === 0 ? 1 : combined === 1 ? 0 : 2);
+            }
+        }
+
+        console.log("[GameScreen] Generated demo evaluation:", evaluation);
+        return evaluation;
+    };
+
+    const submitGuess = async (guess: string) => {
+        try {
+            console.log("[GameScreen] Submitting guess:", guess);
+            const result = await makeGuess(guess);
+            console.log("[GameScreen] Guess result:", result);
+
+            if (result.txId) {
+                setCurrentInput("");
+
+                // For DEMO: Generate and store a mock evaluation immediately
+                // This shows colors right away without waiting for blockchain
+                if (address && gameState) {
+                    const gameId = gameState.wordIndex;
+                    const demoEvaluation = generateDemoEvaluation(guess);
+
+                    await gameStorage.storeGuessEvaluation(
+                        address,
+                        gameId,
+                        guess.toUpperCase(),
+                        demoEvaluation // Demo evaluation with colors!
+                    );
+                    console.log(
+                        "[GameScreen] Stored DEMO evaluation:",
+                        demoEvaluation
+                    );
+
+                    // Immediately reload to show the guess with colors
+                    setTimeout(() => {
+                        loadGame();
+                    }, 500); // Just 500ms for instant feedback!
+                }
+
+                Alert.alert("Success", "Guess submitted! Check your tiles!");
+            } else {
+                Alert.alert("Error", "Failed to submit guess");
+            }
+        } catch (error: any) {
+            console.error("[GameScreen] Error submitting guess:", error);
+            Alert.alert("Error", error.message || "Failed to submit guess");
         }
     };
 
@@ -125,12 +444,18 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
 
     const confirmForfeit = async () => {
         setShowForfeitModal(false);
-        const success = await forfeitGameAction();
-        if (success) {
-            Alert.alert("Game Forfeited", "Better luck next time!");
-            onBack();
-        } else {
-            Alert.alert("Error", "Failed to forfeit game");
+        try {
+            const txId = await forfeitCurrentGame();
+            if (txId) {
+                Alert.alert("Game Forfeited", "Better luck next time!");
+                setTimeout(() => {
+                    onBack();
+                }, 2000);
+            } else {
+                Alert.alert("Error", "Failed to forfeit game");
+            }
+        } catch (error: any) {
+            Alert.alert("Error", error.message || "Failed to forfeit game");
         }
     };
 
@@ -143,7 +468,9 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
 
             if (txId) {
                 Alert.alert("Success!", "Bounty claimed successfully!");
-                await refreshGameState();
+                setTimeout(() => {
+                    loadGame();
+                }, 3000);
             } else {
                 Alert.alert("Error", "Failed to claim bounty");
             }
@@ -212,11 +539,18 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
 
                 {/* Game Grid */}
                 <View className="items-center mt-6 mb-6">
-                    {gameState.grid.map((row, rowIndex) => {
+                    {gameState.grid.map((row: GameTile[], rowIndex: number) => {
                         const isCurrentRow =
                             rowIndex === gameState.currentAttempt;
                         const isCompletedRow =
                             rowIndex < gameState.currentAttempt;
+
+                        console.log(`[GameScreen RENDER] Row ${rowIndex}:`, {
+                            isCurrentRow,
+                            isCompletedRow,
+                            currentAttempt: gameState.currentAttempt,
+                            rowData: row,
+                        });
 
                         return (
                             <View
@@ -224,7 +558,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                                 className="flex-row mb-2"
                                 style={{ gap: 8 }}
                             >
-                                {row.map((tile, colIndex) => {
+                                {row.map((tile: GameTile, colIndex: number) => {
                                     let displayLetter = tile.letter;
                                     let displayState = tile.state;
 
@@ -236,6 +570,18 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                                         displayLetter = currentInput[colIndex];
                                         displayState = "filled";
                                     }
+
+                                    console.log(
+                                        `[GameScreen RENDER] Row ${rowIndex}, Col ${colIndex}:`,
+                                        {
+                                            tileLetter: tile.letter,
+                                            tileState: tile.state,
+                                            displayLetter,
+                                            displayState,
+                                            isCurrentRow,
+                                            currentInput,
+                                        }
+                                    );
 
                                     return (
                                         <Tile
