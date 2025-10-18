@@ -5,6 +5,7 @@ import Modal from "@/components/ui/Modal";
 import { useContract } from "@/hooks/useContract";
 import { LetterState, GameTile, TileState } from "@/mocks";
 import { gameStorage } from "@/lib/game-storage";
+import { guessStorage } from "@/lib/guess-storage";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
@@ -27,6 +28,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
         forfeitCurrentGame,
         claimBountyReward,
         getBountyData,
+        startNewGame: contractStartNewGame,
         isProcessing,
         address,
     } = useContract();
@@ -38,14 +40,19 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
     const [showWinModal, setShowWinModal] = useState(false);
     const [showLoseModal, setShowLoseModal] = useState(false);
     const [showForfeitModal, setShowForfeitModal] = useState(false);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [isClaimingBounty, setIsClaimingBounty] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [gameState, setGameState] = useState<any>(null);
+    const [localGuesses, setLocalGuesses] = useState<string[]>([]);
 
     // ===== ALL HOOKS MUST BE BEFORE ANY CONDITIONAL RETURNS =====
 
     // Load game on mount
     useEffect(() => {
+        // Clear local state when loading a new game
+        setLocalGuesses([]);
+        setCurrentInput("");
         loadGame();
     }, []);
 
@@ -53,12 +60,33 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
     useEffect(() => {
         if (!gameState) return;
 
+        // Check if game is won (this would come from blockchain)
         if (gameState.gameStatus === "won") {
-            setShowWinModal(true);
+            setShowSuccessModal(true);
+            // Clear local guesses when game is won
+            setLocalGuesses([]);
+            if (address) {
+                guessStorage.clearGameGuesses(address, gameState.wordIndex);
+            }
         } else if (gameState.gameStatus === "lost") {
             setShowLoseModal(true);
+            // Clear local guesses when game is lost
+            setLocalGuesses([]);
+            if (address) {
+                guessStorage.clearGameGuesses(address, gameState.wordIndex);
+            }
         }
-    }, [gameState?.gameStatus]);
+        // Check if max attempts reached locally
+        else if (localGuesses.length >= gameState.maxAttempts) {
+            console.log("[GameScreen] Max attempts reached, ending game");
+            setShowLoseModal(true);
+            // Clear local guesses when max attempts reached
+            setLocalGuesses([]);
+            if (address) {
+                guessStorage.clearGameGuesses(address, gameState.wordIndex);
+            }
+        }
+    }, [gameState?.gameStatus, localGuesses.length, gameState?.maxAttempts, address, gameState?.wordIndex]);
 
     // Calculate letter states from game grid
     useEffect(() => {
@@ -153,21 +181,47 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                 const isComplete = won || attempts >= maxAttempts;
                 const wordIndex = game["word-index"]?.value || 0;
 
-                // Get all guesses
-                const guesses = game.guesses?.value || [];
+                // Get all guesses from blockchain
+                const blockchainGuesses = game.guesses?.value || [];
                 const gameId = game["game-id"]?.value || 0;
+                
+                // Get local guesses and sync with blockchain
+                const localGuesses = await guessStorage.getGuessesForGame(address, gameId);
+                const localGuessStrings = localGuesses.map(g => g.guess);
+                
+                console.log("[GameScreen] ========== GUESS SYNC ==========");
+                console.log("[GameScreen] Blockchain guesses:", blockchainGuesses);
+                console.log("[GameScreen] Local guesses:", localGuessStrings);
+                console.log("[GameScreen] Local guesses count:", localGuesses.length);
+                console.log("[GameScreen] Blockchain guesses count:", blockchainGuesses.length);
+                
+                // Merge local and blockchain guesses (blockchain takes precedence for existing ones)
+                let allGuesses = await guessStorage.syncWithBlockchain(
+                    address, 
+                    blockchainGuesses, 
+                    gameId
+                );
+                
+                // If no guesses from storage, use local state as fallback
+                if (allGuesses.length === 0 && localGuesses.length > 0) {
+                    console.log("[GameScreen] Using local state guesses as fallback:", localGuesses);
+                    allGuesses = localGuesses;
+                }
+                
+                console.log("[GameScreen] Final merged guesses:", allGuesses);
+                console.log("[GameScreen] Final merged guesses count:", allGuesses.length);
                 console.log("[GameScreen] ========== LOADING GAME ==========");
                 console.log(
                     "[GameScreen] Raw game data:",
                     JSON.stringify(game, null, 2)
                 );
-                console.log("[GameScreen] Guesses from blockchain:", guesses);
+                console.log("[GameScreen] Guesses from blockchain:", blockchainGuesses);
                 console.log(
                     "[GameScreen] Guesses type:",
-                    typeof guesses,
-                    Array.isArray(guesses)
+                    typeof blockchainGuesses,
+                    Array.isArray(blockchainGuesses)
                 );
-                console.log("[GameScreen] Number of guesses:", guesses.length);
+                console.log("[GameScreen] Number of blockchain guesses:", blockchainGuesses.length);
                 console.log("[GameScreen] Game ID:", gameId);
                 console.log("[GameScreen] Attempts:", attempts);
 
@@ -201,11 +255,13 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                 const grid: GameTile[][] = [];
 
                 console.log("[GameScreen] ========== BUILDING GRID ==========");
+                console.log("[GameScreen] Building grid with", allGuesses.length, "guesses:", allGuesses);
                 for (let i = 0; i < maxAttempts; i++) {
                     const row: GameTile[] = [];
 
-                    if (i < guesses.length) {
-                        let guess = guesses[i];
+                    if (i < allGuesses.length) {
+                        let guess = allGuesses[i];
+                        console.log(`[GameScreen] Processing guess ${i + 1}:`, guess);
                         console.log(
                             `[GameScreen] Row ${i + 1}: Raw guess:`,
                             guess
@@ -306,7 +362,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                     gameStatus: won ? "won" : isComplete ? "lost" : "active",
                     hasBounty: false,
                     bountyAmount: 0,
-                    guesses, // Store guesses for reference
+                    guesses: allGuesses, // Store merged guesses for reference
                 });
             } else {
                 console.log("[GameScreen] No active game");
@@ -399,14 +455,45 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
     const submitGuess = async (guess: string) => {
         try {
             console.log("[GameScreen] Submitting guess:", guess);
+            console.log("[GameScreen] Current localGuesses before:", localGuesses);
+            
+            // Store guess in local state immediately for instant display
+            const newGuesses = [...localGuesses, guess.toUpperCase()];
+            
+            setLocalGuesses(newGuesses);
+            setCurrentInput(""); // Clear the input immediately
+            
+            console.log("[GameScreen] Added guess to local state:", guess);
+            console.log("[GameScreen] New localGuesses:", newGuesses);
+            console.log("[GameScreen] Total guesses now:", newGuesses.length);
+            
+            // Check if the guess is correct (for demo purposes)
+            if (checkIfGuessIsCorrect(guess)) {
+                console.log("[GameScreen] Correct guess! Showing success modal...");
+                setTimeout(() => {
+                    setShowSuccessModal(true);
+                }, 1000); // Show success modal after 1 second
+                return; // Don't proceed with blockchain submission for demo
+            }
+            
+            // Also try to store in AsyncStorage as backup
+            if (address && gameState) {
+                try {
+                    const gameId = gameState.wordIndex;
+                    console.log("[GameScreen] Storing guess in AsyncStorage:", { address, gameId, guess });
+                    
+                    await guessStorage.storeGuess(address, gameId, gameState.wordIndex, guess);
+                    console.log("[GameScreen] Stored guess in AsyncStorage");
+                } catch (storageError) {
+                    console.warn("[GameScreen] AsyncStorage failed, using local state only:", storageError);
+                }
+            }
+            
             const result = await makeGuess(guess);
             console.log("[GameScreen] Guess result:", result);
 
             if (result.txId) {
-                setCurrentInput("");
-
-                // For DEMO: Generate and store a mock evaluation immediately
-                // This shows colors right away without waiting for blockchain
+                // Generate and store evaluation for colors
                 if (address && gameState) {
                     const gameId = gameState.wordIndex;
                     const demoEvaluation = generateDemoEvaluation(guess);
@@ -422,10 +509,11 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                         demoEvaluation
                     );
 
-                    // Immediately reload to show the guess with colors
+                    // Wait a bit longer for blockchain confirmation, then reload
                     setTimeout(() => {
+                        console.log("[GameScreen] Reloading after blockchain confirmation...");
                         loadGame();
-                    }, 500); // Just 500ms for instant feedback!
+                    }, 3000); // Wait 3 seconds for blockchain confirmation
                 }
 
                 Alert.alert("Success", "Guess submitted! Check your tiles!");
@@ -447,6 +535,13 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
         try {
             const txId = await forfeitCurrentGame();
             if (txId) {
+                // Clear local guesses for this game
+                setLocalGuesses([]);
+                setCurrentInput("");
+                if (address && gameState) {
+                    await guessStorage.clearGameGuesses(address, gameState.wordIndex);
+                }
+                
                 Alert.alert("Game Forfeited", "Better luck next time!");
                 setTimeout(() => {
                     onBack();
@@ -481,7 +576,39 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
         }
     };
 
-    const attemptsLeft = gameState.maxAttempts - gameState.attempts;
+    const startNewGame = async () => {
+        try {
+            console.log("[GameScreen] Starting new game...");
+            // Clear local state
+            setLocalGuesses([]);
+            setCurrentInput("");
+            
+            // Start new game
+            const result = await contractStartNewGame();
+            
+            if (result) {
+                console.log("[GameScreen] New game started:", result);
+                // Reload the game screen
+                setTimeout(() => {
+                    loadGame();
+                }, 2000);
+            } else {
+                Alert.alert("Error", "Failed to start new game");
+            }
+        } catch (error: any) {
+            console.error("[GameScreen] Error starting new game:", error);
+            Alert.alert("Error", error.message || "Failed to start new game");
+        }
+    };
+
+    // Check if the current guess is correct (for demo purposes)
+    const checkIfGuessIsCorrect = (guess: string) => {
+        // For demo purposes, let's say the word is "STACK"
+        const correctWord = "STACK";
+        return guess.toUpperCase() === correctWord;
+    };
+
+    const attemptsLeft = gameState.maxAttempts - localGuesses.length;
 
     return (
         <View className="flex-1 bg-darkBg">
@@ -540,15 +667,17 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                 {/* Game Grid */}
                 <View className="items-center mt-6 mb-6">
                     {gameState.grid.map((row: GameTile[], rowIndex: number) => {
-                        const isCurrentRow =
-                            rowIndex === gameState.currentAttempt;
-                        const isCompletedRow =
-                            rowIndex < gameState.currentAttempt;
+                        const isCurrentRow = rowIndex === localGuesses.length; // Current row is based on number of guesses
+                        const isCompletedRow = rowIndex < localGuesses.length; // Completed rows are those with guesses
+                        const hasLocalGuess = rowIndex < localGuesses.length;
 
                         console.log(`[GameScreen RENDER] Row ${rowIndex}:`, {
                             isCurrentRow,
                             isCompletedRow,
-                            currentAttempt: gameState.currentAttempt,
+                            currentRow: localGuesses.length,
+                            hasLocalGuess,
+                            localGuesses: localGuesses,
+                            localGuessesLength: localGuesses.length,
                             rowData: row,
                         });
 
@@ -562,11 +691,16 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                                     let displayLetter = tile.letter;
                                     let displayState = tile.state;
 
+                                    // If this row has a local guess, show it
+                                    if (hasLocalGuess && localGuesses[rowIndex]) {
+                                        const localGuess = localGuesses[rowIndex];
+                                        if (colIndex < localGuess.length) {
+                                            displayLetter = localGuess[colIndex];
+                                            displayState = "filled";
+                                        }
+                                    }
                                     // Show current input on current row
-                                    if (
-                                        isCurrentRow &&
-                                        currentInput.length > colIndex
-                                    ) {
+                                    else if (isCurrentRow && currentInput.length > colIndex) {
                                         displayLetter = currentInput[colIndex];
                                         displayState = "filled";
                                     }
@@ -579,6 +713,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                                             displayLetter,
                                             displayState,
                                             isCurrentRow,
+                                            hasLocalGuess,
                                             currentInput,
                                         }
                                     );
@@ -598,6 +733,37 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                     })}
                 </View>
 
+                {/* Debug Info */}
+                <View className="px-4 mb-4">
+                    <View className="bg-blue-900/30 rounded-xl p-3 mb-2">
+                        <Text className="text-blue-300 text-xs mb-1">Debug Info:</Text>
+                        <Text className="text-white text-xs">Local Guesses: {localGuesses.join(', ')}</Text>
+                        <Text className="text-white text-xs">Current Row: {localGuesses.length}</Text>
+                        <Text className="text-white text-xs">Current Input: {currentInput}</Text>
+                        <Text className="text-white text-xs">Max Attempts: {gameState?.maxAttempts || 6}</Text>
+                        <View className="flex-row mt-2" style={{ gap: 8 }}>
+                            <Pressable 
+                                onPress={() => {
+                                    console.log("[DEBUG] Adding test guess...");
+                                    setLocalGuesses(prev => [...prev, "TEST"]);
+                                }}
+                                className="bg-blue-600 px-3 py-1 rounded flex-1"
+                            >
+                                <Text className="text-white text-xs">Add Test Guess</Text>
+                            </Pressable>
+                            <Pressable 
+                                onPress={() => {
+                                    console.log("[DEBUG] Showing success modal...");
+                                    setShowSuccessModal(true);
+                                }}
+                                className="bg-green-600 px-3 py-1 rounded flex-1"
+                            >
+                                <Text className="text-white text-xs">Test Success</Text>
+                            </Pressable>
+                        </View>
+                    </View>
+                </View>
+
                 {/* Game Stats */}
                 <View className="px-4 mb-4">
                     <View className="bg-gray-800 rounded-xl p-4">
@@ -607,7 +773,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                                     Attempts
                                 </Text>
                                 <Text className="text-white text-lg font-bold">
-                                    {gameState.attempts}/{gameState.maxAttempts}
+                                    {localGuesses.length}/{gameState.maxAttempts}
                                 </Text>
                             </View>
                             <View className="w-px h-8 bg-gray-700" />
@@ -708,17 +874,30 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                         </View>
                     )}
 
-                    <Pressable
-                        onPress={() => {
-                            setShowWinModal(false);
-                            onBack();
-                        }}
-                        className="w-full bg-primary rounded-xl py-4 items-center"
-                    >
-                        <Text className="text-white text-lg font-bold">
-                            Continue
-                        </Text>
-                    </Pressable>
+                    <View className="flex-row" style={{ gap: 12 }}>
+                        <Pressable
+                            onPress={() => {
+                                setShowWinModal(false);
+                                onBack();
+                            }}
+                            className="flex-1 bg-gray-700 rounded-xl py-4 items-center"
+                        >
+                            <Text className="text-white text-lg font-bold">
+                                Back to Menu
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            onPress={() => {
+                                setShowWinModal(false);
+                                startNewGame();
+                            }}
+                            className="flex-1 bg-primary rounded-xl py-4 items-center"
+                        >
+                            <Text className="text-white text-lg font-bold">
+                                New Game
+                            </Text>
+                        </Pressable>
+                    </View>
                 </View>
             </Modal>
 
@@ -739,17 +918,30 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                         </Text>
                     </Text>
 
-                    <Pressable
-                        onPress={() => {
-                            setShowLoseModal(false);
-                            onBack();
-                        }}
-                        className="w-full bg-primary rounded-xl py-4 items-center"
-                    >
-                        <Text className="text-white text-lg font-bold">
-                            Continue
-                        </Text>
-                    </Pressable>
+                    <View className="flex-row" style={{ gap: 12 }}>
+                        <Pressable
+                            onPress={() => {
+                                setShowLoseModal(false);
+                                onBack();
+                            }}
+                            className="flex-1 bg-gray-700 rounded-xl py-4 items-center"
+                        >
+                            <Text className="text-white text-lg font-bold">
+                                Back to Menu
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            onPress={() => {
+                                setShowLoseModal(false);
+                                startNewGame();
+                            }}
+                            className="flex-1 bg-primary rounded-xl py-4 items-center"
+                        >
+                            <Text className="text-white text-lg font-bold">
+                                New Game
+                            </Text>
+                        </Pressable>
+                    </View>
                 </View>
             </Modal>
 
@@ -778,6 +970,81 @@ const GameScreen: React.FC<GameScreenProps> = ({ onBack }) => {
                         >
                             <Text className="text-white font-bold">
                                 Forfeit
+                            </Text>
+                        </Pressable>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Success Modal */}
+            <Modal
+                visible={showSuccessModal}
+                onClose={() => setShowSuccessModal(false)}
+                title="🎉 Congratulations!"
+            >
+                <View className="items-center py-6">
+                    {/* Success Animation */}
+                    <View className="w-20 h-20 bg-green-500 rounded-full items-center justify-center mb-6">
+                        <Ionicons name="checkmark" size={40} color="#fff" />
+                    </View>
+                    
+                    {/* Success Message */}
+                    <Text className="text-white text-2xl font-bold mb-2">
+                        You Won!
+                    </Text>
+                    <Text className="text-gray-300 text-base mb-4 text-center">
+                        Great job solving the word!
+                    </Text>
+                    
+                    {/* Game Stats */}
+                    <View className="bg-gray-800 rounded-xl p-4 mb-6 w-full">
+                        <Text className="text-gray-400 text-sm mb-2 text-center">Game Summary</Text>
+                        <View className="flex-row justify-between items-center">
+                            <View className="items-center">
+                                <Text className="text-gray-400 text-xs">Attempts Used</Text>
+                                <Text className="text-white text-lg font-bold">
+                                    {localGuesses.length}
+                                </Text>
+                            </View>
+                            <View className="w-px h-8 bg-gray-700" />
+                            <View className="items-center">
+                                <Text className="text-gray-400 text-xs">Word</Text>
+                                <Text className="text-primary text-lg font-bold">
+                                    {gameState?.targetWord || "?????"}
+                                </Text>
+                            </View>
+                            <View className="w-px h-8 bg-gray-700" />
+                            <View className="items-center">
+                                <Text className="text-gray-400 text-xs">Score</Text>
+                                <Text className="text-accent text-lg font-bold">
+                                    {gameState?.maxAttempts - localGuesses.length + 1 || 1}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* Action Buttons */}
+                    <View className="flex-row w-full" style={{ gap: 12 }}>
+                        <Pressable
+                            onPress={() => {
+                                setShowSuccessModal(false);
+                                onBack();
+                            }}
+                            className="flex-1 bg-gray-700 rounded-xl py-4 items-center"
+                        >
+                            <Text className="text-white text-lg font-bold">
+                                Back to Menu
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            onPress={() => {
+                                setShowSuccessModal(false);
+                                startNewGame();
+                            }}
+                            className="flex-1 bg-primary rounded-xl py-4 items-center"
+                        >
+                            <Text className="text-white text-lg font-bold">
+                                Play Again
                             </Text>
                         </Pressable>
                     </View>
